@@ -320,7 +320,7 @@ namespace SteamKit2
             DebugLog.WriteLine( "UFSClient", "Got encryption request. Universe: {0} Protocol ver: {1}", eUniv, protoVersion );
             DebugLog.Assert( protoVersion == 1, "UFSClient", "Encryption handshake protocol version mismatch!" );
 
-            byte[] pubKey = KeyDictionary.GetPublicKey( eUniv );
+            byte[] pubKey = steamClient.KeyDictionary.GetPublicKey( eUniv );
 
             if ( pubKey == null )
             {

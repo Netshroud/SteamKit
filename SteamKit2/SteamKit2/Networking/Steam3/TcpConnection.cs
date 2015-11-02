@@ -16,7 +16,7 @@ namespace SteamKit2
 {
     class TcpConnection : Connection
     {
-        const uint MAGIC = 0x31305456; // "VT01"
+        internal const uint MAGIC = 0x31305456; // "VT01"
 
         private IPEndPoint destination;
         private Socket socket;

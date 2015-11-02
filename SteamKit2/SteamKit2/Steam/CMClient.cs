@@ -82,6 +82,13 @@ namespace SteamKit2.Internal
         /// </value>
         public TimeSpan ConnectionTimeout { get; set; }
 
+        /// <summary>
+        /// Gets or sets the RSA public key provider.
+        /// </summary>
+        /// <value>
+        /// The key provider.</value>
+        public IKeyDictionary KeyDictionary { get; set; } = new KeyDictionary();
+
 
         Connection connection;
         byte[] tempSessionKey;
