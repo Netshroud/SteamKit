@@ -29,7 +29,6 @@ Portions of this software are Copyright of Alex Henderson
 */
 
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -102,611 +101,603 @@ namespace SteamKit2
             info.AddValue("Position", _position);
         }
     }
-    
-    
-    class AsnKeyParser
+
+
+    ref struct AsnKeyParser
     {
-            readonly AsnParser _parser;
+        AsnParser _parser;
 
-            public AsnKeyParser(String pathname)
+        public AsnKeyParser(String pathname)
+        {
+            using (var reader = new BinaryReader(
+                new FileStream(pathname, FileMode.Open, FileAccess.Read)))
             {
-                using (var reader = new BinaryReader(
-                  new FileStream(pathname, FileMode.Open, FileAccess.Read)))
-                {
-                    var info = new FileInfo(pathname);
+                var info = new FileInfo(pathname);
 
-                    _parser = new AsnParser(reader.ReadBytes((int)info.Length));
-                }
+                _parser = new AsnParser(reader.ReadBytes((int)info.Length));
+            }
+        }
+
+        public AsnKeyParser(ReadOnlySpan<byte> contents)
+        {
+            _parser = new AsnParser(contents);
+        }
+
+        static ReadOnlySpan<byte> TrimLeadingZero(ReadOnlySpan<byte> values)
+        {
+            if (values.Length > 1 && values[0] == 0)
+            {
+                return values.Slice(1);
             }
 
-            public AsnKeyParser(ICollection<byte> contents)
+            return values;
+        }
+
+        public static bool EqualOid(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second)
+        {
+            if (first.Length != second.Length)
             {
-                _parser = new AsnParser(contents);
+                return false;
             }
 
-            public static byte[] TrimLeadingZero(byte[] values)
+            for (int i = 0; i < first.Length; i++)
             {
-                byte[] r;
-                if ((0x00 == values[0]) && (values.Length > 1))
-                {
-                    r = new byte[values.Length - 1];
-                    Array.Copy(values, 1, r, 0, values.Length - 1);
-                }
-                else
-                {
-                    r = new byte[values.Length];
-                    Array.Copy(values, r, values.Length);
-                }
-
-                return r;
-            }
-
-            public static bool EqualOid(byte[] first, byte[] second)
-            {
-                if (first.Length != second.Length)
+                if (first[i] != second[i])
                 {
                     return false;
                 }
-
-                for (int i = 0; i < first.Length; i++)
-                {
-                    if (first[i] != second[i])
-                    {
-                        return false;
-                    }
-                }
-
-                return true;
             }
 
-            public RSAParameters ParseRSAPublicKey()
+            return true;
+        }
+
+        public RSAParameters ParseRSAPublicKey()
+        {
+            var parameters = new RSAParameters();
+
+            // Current value
+
+            // Sanity Check
+
+            // Checkpoint
+            int position = _parser.CurrentPosition();
+
+            // Ignore Sequence - PublicKeyInfo
+            int length = _parser.NextSequence();
+            if (length != _parser.RemainingBytes())
             {
-                var parameters = new RSAParameters();
-
-                // Current value
-
-                // Sanity Check
-
-                // Checkpoint
-                int position = _parser.CurrentPosition();
-
-                // Ignore Sequence - PublicKeyInfo
-                int length = _parser.NextSequence();
-                if (length != _parser.RemainingBytes())
-                {
-                    var sb = new StringBuilder("Incorrect Sequence Size. ");
-                    sb.AppendFormat("Specified: {0}, Remaining: {1}",
-                                    length.ToString(CultureInfo.InvariantCulture),
-                                    _parser.RemainingBytes().ToString(CultureInfo.InvariantCulture));
-                    throw new BerDecodeException(sb.ToString(), position);
-                }
-
-                // Checkpoint
-                position = _parser.CurrentPosition();
-
-                // Ignore Sequence - AlgorithmIdentifier
-                length = _parser.NextSequence();
-                if (length > _parser.RemainingBytes())
-                {
-                    var sb = new StringBuilder("Incorrect AlgorithmIdentifier Size. ");
-                    sb.AppendFormat("Specified: {0}, Remaining: {1}",
-                                    length.ToString(CultureInfo.InvariantCulture),
-                                    _parser.RemainingBytes().ToString(CultureInfo.InvariantCulture));
-                    throw new BerDecodeException(sb.ToString(), position);
-                }
-
-                // Checkpoint
-                position = _parser.CurrentPosition();
-                // Grab the OID
-                byte[] value = _parser.NextOID();
-                byte[] oid = { 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01 };
-                if (!EqualOid(value, oid))
-                {
-                    throw new BerDecodeException("Expected OID 1.2.840.113549.1.1.1", position);
-                }
-
-                // Optional Parameters
-                if (_parser.IsNextNull())
-                {
-                    _parser.NextNull();
-                    // Also OK: value = _parser.Next();
-                }
-                else
-                {
-                    // Gracefully skip the optional data
-                    _parser.Next();
-                }
-
-                // Checkpoint
-                position = _parser.CurrentPosition();
-
-                // Ignore BitString - PublicKey
-                length = _parser.NextBitString();
-                if (length > _parser.RemainingBytes())
-                {
-                    var sb = new StringBuilder("Incorrect PublicKey Size. ");
-                    sb.AppendFormat("Specified: {0}, Remaining: {1}",
-                                    length.ToString(CultureInfo.InvariantCulture),
-                                    (_parser.RemainingBytes()).ToString(CultureInfo.InvariantCulture));
-                    throw new BerDecodeException(sb.ToString(), position);
-                }
-
-                // Checkpoint
-                position = _parser.CurrentPosition();
-
-                // Ignore Sequence - RSAPublicKey
-                length = _parser.NextSequence();
-                if (length < _parser.RemainingBytes())
-                {
-                    var sb = new StringBuilder("Incorrect RSAPublicKey Size. ");
-                    sb.AppendFormat("Specified: {0}, Remaining: {1}",
-                                    length.ToString(CultureInfo.InvariantCulture),
-                                    _parser.RemainingBytes().ToString(CultureInfo.InvariantCulture));
-                    throw new BerDecodeException(sb.ToString(), position);
-                }
-
-                parameters.Modulus = TrimLeadingZero(_parser.NextInteger());
-                parameters.Exponent = TrimLeadingZero(_parser.NextInteger());
-
-                Debug.Assert(0 == _parser.RemainingBytes());
-
-                return parameters;
+                var sb = new StringBuilder("Incorrect Sequence Size. ");
+                sb.AppendFormat("Specified: {0}, Remaining: {1}",
+                                length.ToString(CultureInfo.InvariantCulture),
+                                _parser.RemainingBytes().ToString(CultureInfo.InvariantCulture));
+                throw new BerDecodeException(sb.ToString(), position);
             }
 
-            public DSAParameters ParseDSAPublicKey()
+            // Checkpoint
+            position = _parser.CurrentPosition();
+
+            // Ignore Sequence - AlgorithmIdentifier
+            length = _parser.NextSequence();
+            if (length > _parser.RemainingBytes())
             {
-                var parameters = new DSAParameters();
-
-                // Current value
-
-                // Current Position
-                int position = _parser.CurrentPosition();
-                // Sanity Checks
-
-                // Ignore Sequence - PublicKeyInfo
-                int length = _parser.NextSequence();
-                if (length != _parser.RemainingBytes())
-                {
-                    var sb = new StringBuilder("Incorrect Sequence Size. ");
-                    sb.AppendFormat("Specified: {0}, Remaining: {1}",
-                                    length.ToString(CultureInfo.InvariantCulture),
-                                    _parser.RemainingBytes().ToString(CultureInfo.InvariantCulture));
-                    throw new BerDecodeException(sb.ToString(), position);
-                }
-
-                // Checkpoint
-                position = _parser.CurrentPosition();
-
-                // Ignore Sequence - AlgorithmIdentifier
-                length = _parser.NextSequence();
-                if (length > _parser.RemainingBytes())
-                {
-                    var sb = new StringBuilder("Incorrect AlgorithmIdentifier Size. ");
-                    sb.AppendFormat("Specified: {0}, Remaining: {1}",
-                                    length.ToString(CultureInfo.InvariantCulture),
-                                    _parser.RemainingBytes().ToString(CultureInfo.InvariantCulture));
-                    throw new BerDecodeException(sb.ToString(), position);
-                }
-
-                // Checkpoint
-                position = _parser.CurrentPosition();
-
-                // Grab the OID
-                byte[] value = _parser.NextOID();
-                byte[] oid = { 0x2a, 0x86, 0x48, 0xce, 0x38, 0x04, 0x01 };
-                if (!EqualOid(value, oid))
-                {
-                    throw new BerDecodeException("Expected OID 1.2.840.10040.4.1", position);
-                }
-
-
-                // Checkpoint
-                position = _parser.CurrentPosition();
-
-                // Ignore Sequence - DSS-Params
-                length = _parser.NextSequence();
-                if (length > _parser.RemainingBytes())
-                {
-                    var sb = new StringBuilder("Incorrect DSS-Params Size. ");
-                    sb.AppendFormat("Specified: {0}, Remaining: {1}",
-                                    length.ToString(CultureInfo.InvariantCulture),
-                                    _parser.RemainingBytes().ToString(CultureInfo.InvariantCulture));
-                    throw new BerDecodeException(sb.ToString(), position);
-                }
-
-                // Next three are curve parameters
-                parameters.P = TrimLeadingZero(_parser.NextInteger());
-                parameters.Q = TrimLeadingZero(_parser.NextInteger());
-                parameters.G = TrimLeadingZero(_parser.NextInteger());
-
-                // Ignore BitString - PrivateKey
-                _parser.NextBitString();
-
-                // Public Key
-                parameters.Y = TrimLeadingZero(_parser.NextInteger());
-
-                Debug.Assert(0 == _parser.RemainingBytes());
-
-                return parameters;
+                var sb = new StringBuilder("Incorrect AlgorithmIdentifier Size. ");
+                sb.AppendFormat("Specified: {0}, Remaining: {1}",
+                                length.ToString(CultureInfo.InvariantCulture),
+                                _parser.RemainingBytes().ToString(CultureInfo.InvariantCulture));
+                throw new BerDecodeException(sb.ToString(), position);
             }
+
+            // Checkpoint
+            position = _parser.CurrentPosition();
+            // Grab the OID
+            ReadOnlySpan<byte> value = _parser.NextOID();
+            ReadOnlySpan<byte> oid = stackalloc byte[] { 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01 };
+            if (!EqualOid(value, oid))
+            {
+                throw new BerDecodeException("Expected OID 1.2.840.113549.1.1.1", position);
+            }
+
+            // Optional Parameters
+            if (_parser.IsNextNull())
+            {
+                _parser.NextNull();
+                // Also OK: value = _parser.Next();
+            }
+            else
+            {
+                // Gracefully skip the optional data
+                _parser.Next();
+            }
+
+            // Checkpoint
+            position = _parser.CurrentPosition();
+
+            // Ignore BitString - PublicKey
+            length = _parser.NextBitString();
+            if (length > _parser.RemainingBytes())
+            {
+                var sb = new StringBuilder("Incorrect PublicKey Size. ");
+                sb.AppendFormat("Specified: {0}, Remaining: {1}",
+                                length.ToString(CultureInfo.InvariantCulture),
+                                (_parser.RemainingBytes()).ToString(CultureInfo.InvariantCulture));
+                throw new BerDecodeException(sb.ToString(), position);
+            }
+
+            // Checkpoint
+            position = _parser.CurrentPosition();
+
+            // Ignore Sequence - RSAPublicKey
+            length = _parser.NextSequence();
+            if (length < _parser.RemainingBytes())
+            {
+                var sb = new StringBuilder("Incorrect RSAPublicKey Size. ");
+                sb.AppendFormat("Specified: {0}, Remaining: {1}",
+                                length.ToString(CultureInfo.InvariantCulture),
+                                _parser.RemainingBytes().ToString(CultureInfo.InvariantCulture));
+                throw new BerDecodeException(sb.ToString(), position);
+            }
+
+            parameters.Modulus = TrimLeadingZero(_parser.NextInteger()).ToArray();
+            parameters.Exponent = TrimLeadingZero(_parser.NextInteger()).ToArray();
+
+            Debug.Assert(0 == _parser.RemainingBytes());
+
+            return parameters;
+        }
+
+        public DSAParameters ParseDSAPublicKey()
+        {
+            var parameters = new DSAParameters();
+
+            // Current value
+
+            // Current Position
+            int position = _parser.CurrentPosition();
+            // Sanity Checks
+
+            // Ignore Sequence - PublicKeyInfo
+            int length = _parser.NextSequence();
+            if (length != _parser.RemainingBytes())
+            {
+                var sb = new StringBuilder("Incorrect Sequence Size. ");
+                sb.AppendFormat("Specified: {0}, Remaining: {1}",
+                                length.ToString(CultureInfo.InvariantCulture),
+                                _parser.RemainingBytes().ToString(CultureInfo.InvariantCulture));
+                throw new BerDecodeException(sb.ToString(), position);
+            }
+
+            // Checkpoint
+            position = _parser.CurrentPosition();
+
+            // Ignore Sequence - AlgorithmIdentifier
+            length = _parser.NextSequence();
+            if (length > _parser.RemainingBytes())
+            {
+                var sb = new StringBuilder("Incorrect AlgorithmIdentifier Size. ");
+                sb.AppendFormat("Specified: {0}, Remaining: {1}",
+                                length.ToString(CultureInfo.InvariantCulture),
+                                _parser.RemainingBytes().ToString(CultureInfo.InvariantCulture));
+                throw new BerDecodeException(sb.ToString(), position);
+            }
+
+            // Checkpoint
+            position = _parser.CurrentPosition();
+
+            // Grab the OID
+            ReadOnlySpan<byte> value = _parser.NextOID();
+            ReadOnlySpan<byte> oid = stackalloc byte[] { 0x2a, 0x86, 0x48, 0xce, 0x38, 0x04, 0x01 };
+            if (!EqualOid(value, oid))
+            {
+                throw new BerDecodeException("Expected OID 1.2.840.10040.4.1", position);
+            }
+
+
+            // Checkpoint
+            position = _parser.CurrentPosition();
+
+            // Ignore Sequence - DSS-Params
+            length = _parser.NextSequence();
+            if (length > _parser.RemainingBytes())
+            {
+                var sb = new StringBuilder("Incorrect DSS-Params Size. ");
+                sb.AppendFormat("Specified: {0}, Remaining: {1}",
+                                length.ToString(CultureInfo.InvariantCulture),
+                                _parser.RemainingBytes().ToString(CultureInfo.InvariantCulture));
+                throw new BerDecodeException(sb.ToString(), position);
+            }
+
+            // Next three are curve parameters
+            parameters.P = TrimLeadingZero(_parser.NextInteger()).ToArray();
+            parameters.Q = TrimLeadingZero(_parser.NextInteger()).ToArray();
+            parameters.G = TrimLeadingZero(_parser.NextInteger()).ToArray();
+
+            // Ignore BitString - PrivateKey
+            _parser.NextBitString();
+
+            // Public Key
+            parameters.Y = TrimLeadingZero(_parser.NextInteger()).ToArray();
+
+            Debug.Assert(0 == _parser.RemainingBytes());
+
+            return parameters;
+        }
     }
 
-    internal class AsnParser
+    ref struct AsnParser
+    {
+        readonly int _initialCount;
+        ReadOnlySpan<byte> _octets;
+
+        public AsnParser(ReadOnlySpan<byte> values)
         {
-            readonly int _initialCount;
-            readonly List<byte> _octets;
+            _octets = values;
 
-            public AsnParser(ICollection<byte> values)
+            _initialCount = _octets.Length;
+        }
+
+        public int CurrentPosition()
+        {
+            return _initialCount - _octets.Length;
+        }
+
+        public int RemainingBytes()
+        {
+            return _octets.Length;
+        }
+
+        int GetLength()
+        {
+            int length = 0;
+
+            // Checkpoint
+            int position = CurrentPosition();
+
+            try
             {
-                _octets = new List<byte>(values.Count);
-                _octets.AddRange(values);
+                byte b = GetNextOctet();
 
-                _initialCount = _octets.Count;
-            }
-
-            public int CurrentPosition()
-            {
-                return _initialCount - _octets.Count;
-            }
-
-            public int RemainingBytes()
-            {
-                return _octets.Count;
-            }
-
-            int GetLength()
-            {
-                int length = 0;
-
-                // Checkpoint
-                int position = CurrentPosition();
-
-                try
+                if (b == (b & 0x7f))
                 {
-                    byte b = GetNextOctet();
-
-                    if (b == (b & 0x7f))
-                    {
-                        return b;
-                    }
-                    int i = b & 0x7f;
-
-                    if (i > 4)
-                    {
-                        var sb = new StringBuilder("Invalid Length Encoding. ");
-                        sb.AppendFormat("Length uses {0} _octets",
-                                        i.ToString(CultureInfo.InvariantCulture));
-                        throw new BerDecodeException(sb.ToString(), position);
-                    }
-
-                    while (0 != i--)
-                    {
-                        // shift left
-                        length <<= 8;
-
-                        length |= GetNextOctet();
-                    }
+                    return b;
                 }
-                catch (ArgumentOutOfRangeException ex)
+                int i = b & 0x7f;
+
+                if (i > 4)
                 {
-                    throw new BerDecodeException("Error Parsing Key", position, ex);
+                    var sb = new StringBuilder("Invalid Length Encoding. ");
+                    sb.AppendFormat("Length uses {0} _octets",
+                                    i.ToString(CultureInfo.InvariantCulture));
+                    throw new BerDecodeException(sb.ToString(), position);
+                }
+
+                while (0 != i--)
+                {
+                    // shift left
+                    length <<= 8;
+
+                    length |= GetNextOctet();
+                }
+            }
+            catch (ArgumentOutOfRangeException ex)
+            {
+                throw new BerDecodeException("Error Parsing Key", position, ex);
+            }
+
+            return length;
+        }
+
+        public ReadOnlySpan<byte> Next()
+        {
+            int position = CurrentPosition();
+
+            try
+            {
+#pragma warning disable 168
+#pragma warning disable 219
+                byte b = GetNextOctet();
+#pragma warning restore 219
+#pragma warning restore 168
+
+                int length = GetLength();
+                if (length > RemainingBytes())
+                {
+                    var sb = new StringBuilder("Incorrect Size. ");
+                    sb.AppendFormat("Specified: {0}, Remaining: {1}",
+                                    length.ToString(CultureInfo.InvariantCulture),
+                                    RemainingBytes().ToString(CultureInfo.InvariantCulture));
+                    throw new BerDecodeException(sb.ToString(), position);
+                }
+
+                return GetOctets(length);
+            }
+
+            catch (ArgumentOutOfRangeException ex)
+            {
+                throw new BerDecodeException("Error Parsing Key", position, ex);
+            }
+        }
+
+        public byte GetNextOctet()
+        {
+            int position = CurrentPosition();
+
+            if (0 == RemainingBytes())
+            {
+                var sb = new StringBuilder("Incorrect Size. ");
+                sb.AppendFormat("Specified: {0}, Remaining: {1}",
+                                1.ToString(CultureInfo.InvariantCulture),
+                                RemainingBytes().ToString(CultureInfo.InvariantCulture));
+                throw new BerDecodeException(sb.ToString(), position);
+            }
+
+            byte b = GetOctets(1)[0];
+
+            return b;
+        }
+
+        public ReadOnlySpan<byte> GetOctets(int octetCount)
+        {
+            int position = CurrentPosition();
+
+            if (octetCount > RemainingBytes())
+            {
+                var sb = new StringBuilder("Incorrect Size. ");
+                sb.AppendFormat("Specified: {0}, Remaining: {1}",
+                                octetCount.ToString(CultureInfo.InvariantCulture),
+                                RemainingBytes().ToString(CultureInfo.InvariantCulture));
+                throw new BerDecodeException(sb.ToString(), position);
+            }
+
+
+            try
+            {
+                var values = _octets.Slice(0, octetCount);
+                _octets = _octets.Slice(octetCount);
+
+                return values;
+            }
+
+            catch (ArgumentOutOfRangeException ex)
+            {
+                throw new BerDecodeException("Error Parsing Key", position, ex);
+            }
+
+        }
+
+        public bool IsNextNull()
+        {
+            return 0x05 == _octets[0];
+        }
+
+        public int NextNull()
+        {
+            int position = CurrentPosition();
+
+            try
+            {
+                byte b = GetNextOctet();
+                if (0x05 != b)
+                {
+                    var sb = new StringBuilder("Expected Null. ");
+                    sb.AppendFormat("Specified Identifier: {0}", b.ToString(CultureInfo.InvariantCulture));
+                    throw new BerDecodeException(sb.ToString(), position);
+                }
+
+                // Next octet must be 0
+                b = GetNextOctet();
+                if (0x00 != b)
+                {
+                    var sb = new StringBuilder("Null has non-zero size. ");
+                    sb.AppendFormat("Size: {0}", b.ToString(CultureInfo.InvariantCulture));
+                    throw new BerDecodeException(sb.ToString(), position);
+                }
+
+                return 0;
+            }
+
+            catch (ArgumentOutOfRangeException ex)
+            {
+                throw new BerDecodeException("Error Parsing Key", position, ex);
+            }
+        }
+
+        public bool IsNextSequence()
+        {
+            return 0x30 == _octets[0];
+        }
+
+        public int NextSequence()
+        {
+            int position = CurrentPosition();
+
+            try
+            {
+                byte b = GetNextOctet();
+                if (0x30 != b)
+                {
+                    var sb = new StringBuilder("Expected Sequence. ");
+                    sb.AppendFormat("Specified Identifier: {0}",
+                                    b.ToString(CultureInfo.InvariantCulture));
+                    throw new BerDecodeException(sb.ToString(), position);
+                }
+
+                int length = GetLength();
+                if (length > RemainingBytes())
+                {
+                    var sb = new StringBuilder("Incorrect Sequence Size. ");
+                    sb.AppendFormat("Specified: {0}, Remaining: {1}",
+                                    length.ToString(CultureInfo.InvariantCulture),
+                                    RemainingBytes().ToString(CultureInfo.InvariantCulture));
+                    throw new BerDecodeException(sb.ToString(), position);
                 }
 
                 return length;
             }
 
-            public byte[] Next()
+            catch (ArgumentOutOfRangeException ex)
             {
-                int position = CurrentPosition();
-
-                try
-                {
-#pragma warning disable 168
-#pragma warning disable 219
-                    byte b = GetNextOctet();
-#pragma warning restore 219
-#pragma warning restore 168
-
-                    int length = GetLength();
-                    if (length > RemainingBytes())
-                    {
-                        var sb = new StringBuilder("Incorrect Size. ");
-                        sb.AppendFormat("Specified: {0}, Remaining: {1}",
-                                        length.ToString(CultureInfo.InvariantCulture),
-                                        RemainingBytes().ToString(CultureInfo.InvariantCulture));
-                        throw new BerDecodeException(sb.ToString(), position);
-                    }
-
-                    return GetOctets(length);
-                }
-
-                catch (ArgumentOutOfRangeException ex)
-                {
-                    throw new BerDecodeException("Error Parsing Key", position, ex);
-                }
+                throw new BerDecodeException("Error Parsing Key", position, ex);
             }
+        }
 
-            public byte GetNextOctet()
+        public bool IsNextOctetString()
+        {
+            return 0x04 == _octets[0];
+        }
+
+        public int NextOctetString()
+        {
+            int position = CurrentPosition();
+
+            try
             {
-                int position = CurrentPosition();
-
-                if (0 == RemainingBytes())
+                byte b = GetNextOctet();
+                if (0x04 != b)
                 {
-                    var sb = new StringBuilder("Incorrect Size. ");
+                    var sb = new StringBuilder("Expected Octet String. ");
+                    sb.AppendFormat("Specified Identifier: {0}", b.ToString(CultureInfo.InvariantCulture));
+                    throw new BerDecodeException(sb.ToString(), position);
+                }
+
+                int length = GetLength();
+                if (length > RemainingBytes())
+                {
+                    var sb = new StringBuilder("Incorrect Octet String Size. ");
                     sb.AppendFormat("Specified: {0}, Remaining: {1}",
-                                    1.ToString(CultureInfo.InvariantCulture),
+                                    length.ToString(CultureInfo.InvariantCulture),
                                     RemainingBytes().ToString(CultureInfo.InvariantCulture));
                     throw new BerDecodeException(sb.ToString(), position);
                 }
 
-                byte b = GetOctets(1)[0];
-
-                return b;
+                return length;
             }
 
-            public byte[] GetOctets(int octetCount)
+            catch (ArgumentOutOfRangeException ex)
             {
-                int position = CurrentPosition();
+                throw new BerDecodeException("Error Parsing Key", position, ex);
+            }
+        }
 
-                if (octetCount > RemainingBytes())
+        public bool IsNextBitString()
+        {
+            return 0x03 == _octets[0];
+        }
+
+        public int NextBitString()
+        {
+            int position = CurrentPosition();
+
+            try
+            {
+                byte b = GetNextOctet();
+                if (0x03 != b)
                 {
-                    var sb = new StringBuilder("Incorrect Size. ");
+                    var sb = new StringBuilder("Expected Bit String. ");
+                    sb.AppendFormat("Specified Identifier: {0}", b.ToString(CultureInfo.InvariantCulture));
+                    throw new BerDecodeException(sb.ToString(), position);
+                }
+
+                int length = GetLength();
+
+                // We need to consume unused bits, which is the first
+                //   octet of the remaing values
+                b = _octets[0];
+                _octets = _octets.Slice(1);
+                length--;
+
+                if (0x00 != b)
+                {
+                    throw new BerDecodeException("The first octet of BitString must be 0", position);
+                }
+
+                return length;
+            }
+
+            catch (ArgumentOutOfRangeException ex)
+            {
+                throw new BerDecodeException("Error Parsing Key", position, ex);
+            }
+        }
+
+        public bool IsNextInteger()
+        {
+            return 0x02 == _octets[0];
+        }
+
+        public ReadOnlySpan<byte> NextInteger()
+        {
+            int position = CurrentPosition();
+
+            try
+            {
+                byte b = GetNextOctet();
+                if (0x02 != b)
+                {
+                    var sb = new StringBuilder("Expected Integer. ");
+                    sb.AppendFormat("Specified Identifier: {0}", b.ToString(CultureInfo.InvariantCulture));
+                    throw new BerDecodeException(sb.ToString(), position);
+                }
+
+                int length = GetLength();
+                if (length > RemainingBytes())
+                {
+                    var sb = new StringBuilder("Incorrect Integer Size. ");
                     sb.AppendFormat("Specified: {0}, Remaining: {1}",
-                                    octetCount.ToString(CultureInfo.InvariantCulture),
+                                    length.ToString(CultureInfo.InvariantCulture),
                                     RemainingBytes().ToString(CultureInfo.InvariantCulture));
                     throw new BerDecodeException(sb.ToString(), position);
                 }
 
-                var values = new byte[octetCount];
+                return GetOctets(length);
+            }
 
-                try
+            catch (ArgumentOutOfRangeException ex)
+            {
+                throw new BerDecodeException("Error Parsing Key", position, ex);
+            }
+        }
+
+        public ReadOnlySpan<byte> NextOID()
+        {
+            int position = CurrentPosition();
+
+            try
+            {
+                byte b = GetNextOctet();
+                if (0x06 != b)
                 {
-                    _octets.CopyTo(0, values, 0, octetCount);
-                    _octets.RemoveRange(0, octetCount);
+                    var sb = new StringBuilder("Expected Object Identifier. ");
+                    sb.AppendFormat("Specified Identifier: {0}",
+                                    b.ToString(CultureInfo.InvariantCulture));
+                    throw new BerDecodeException(sb.ToString(), position);
                 }
 
-                catch (ArgumentOutOfRangeException ex)
+                int length = GetLength();
+                if (length > RemainingBytes())
                 {
-                    throw new BerDecodeException("Error Parsing Key", position, ex);
+                    var sb = new StringBuilder("Incorrect Object Identifier Size. ");
+                    sb.AppendFormat("Specified: {0}, Remaining: {1}",
+                                    length.ToString(CultureInfo.InvariantCulture),
+                                    RemainingBytes().ToString(CultureInfo.InvariantCulture));
+                    throw new BerDecodeException(sb.ToString(), position);
+                }
+
+                var values = new byte[length];
+
+                for (int i = 0; i < length; i++)
+                {
+                    values[i] = _octets[0];
+                    _octets = _octets.Slice(1);
                 }
 
                 return values;
             }
 
-            public bool IsNextNull()
+            catch (ArgumentOutOfRangeException ex)
             {
-                return 0x05 == _octets[0];
-            }
-
-            public int NextNull()
-            {
-                int position = CurrentPosition();
-
-                try
-                {
-                    byte b = GetNextOctet();
-                    if (0x05 != b)
-                    {
-                        var sb = new StringBuilder("Expected Null. ");
-                        sb.AppendFormat("Specified Identifier: {0}", b.ToString(CultureInfo.InvariantCulture));
-                        throw new BerDecodeException(sb.ToString(), position);
-                    }
-
-                    // Next octet must be 0
-                    b = GetNextOctet();
-                    if (0x00 != b)
-                    {
-                        var sb = new StringBuilder("Null has non-zero size. ");
-                        sb.AppendFormat("Size: {0}", b.ToString(CultureInfo.InvariantCulture));
-                        throw new BerDecodeException(sb.ToString(), position);
-                    }
-
-                    return 0;
-                }
-
-                catch (ArgumentOutOfRangeException ex)
-                {
-                    throw new BerDecodeException("Error Parsing Key", position, ex);
-                }
-            }
-
-            public bool IsNextSequence()
-            {
-                return 0x30 == _octets[0];
-            }
-
-            public int NextSequence()
-            {
-                int position = CurrentPosition();
-
-                try
-                {
-                    byte b = GetNextOctet();
-                    if (0x30 != b)
-                    {
-                        var sb = new StringBuilder("Expected Sequence. ");
-                        sb.AppendFormat("Specified Identifier: {0}",
-                                        b.ToString(CultureInfo.InvariantCulture));
-                        throw new BerDecodeException(sb.ToString(), position);
-                    }
-
-                    int length = GetLength();
-                    if (length > RemainingBytes())
-                    {
-                        var sb = new StringBuilder("Incorrect Sequence Size. ");
-                        sb.AppendFormat("Specified: {0}, Remaining: {1}",
-                                        length.ToString(CultureInfo.InvariantCulture),
-                                        RemainingBytes().ToString(CultureInfo.InvariantCulture));
-                        throw new BerDecodeException(sb.ToString(), position);
-                    }
-
-                    return length;
-                }
-
-                catch (ArgumentOutOfRangeException ex)
-                {
-                    throw new BerDecodeException("Error Parsing Key", position, ex);
-                }
-            }
-
-            public bool IsNextOctetString()
-            {
-                return 0x04 == _octets[0];
-            }
-
-            public int NextOctetString()
-            {
-                int position = CurrentPosition();
-
-                try
-                {
-                    byte b = GetNextOctet();
-                    if (0x04 != b)
-                    {
-                        var sb = new StringBuilder("Expected Octet String. ");
-                        sb.AppendFormat("Specified Identifier: {0}", b.ToString(CultureInfo.InvariantCulture));
-                        throw new BerDecodeException(sb.ToString(), position);
-                    }
-
-                    int length = GetLength();
-                    if (length > RemainingBytes())
-                    {
-                        var sb = new StringBuilder("Incorrect Octet String Size. ");
-                        sb.AppendFormat("Specified: {0}, Remaining: {1}",
-                                        length.ToString(CultureInfo.InvariantCulture),
-                                        RemainingBytes().ToString(CultureInfo.InvariantCulture));
-                        throw new BerDecodeException(sb.ToString(), position);
-                    }
-
-                    return length;
-                }
-
-                catch (ArgumentOutOfRangeException ex)
-                {
-                    throw new BerDecodeException("Error Parsing Key", position, ex);
-                }
-            }
-
-            public bool IsNextBitString()
-            {
-                return 0x03 == _octets[0];
-            }
-
-            public int NextBitString()
-            {
-                int position = CurrentPosition();
-
-                try
-                {
-                    byte b = GetNextOctet();
-                    if (0x03 != b)
-                    {
-                        var sb = new StringBuilder("Expected Bit String. ");
-                        sb.AppendFormat("Specified Identifier: {0}", b.ToString(CultureInfo.InvariantCulture));
-                        throw new BerDecodeException(sb.ToString(), position);
-                    }
-
-                    int length = GetLength();
-
-                    // We need to consume unused bits, which is the first
-                    //   octet of the remaing values
-                    b = _octets[0];
-                    _octets.RemoveAt(0);
-                    length--;
-
-                    if (0x00 != b)
-                    {
-                        throw new BerDecodeException("The first octet of BitString must be 0", position);
-                    }
-
-                    return length;
-                }
-
-                catch (ArgumentOutOfRangeException ex)
-                {
-                    throw new BerDecodeException("Error Parsing Key", position, ex);
-                }
-            }
-
-            public bool IsNextInteger()
-            {
-                return 0x02 == _octets[0];
-            }
-
-            public byte[] NextInteger()
-            {
-                int position = CurrentPosition();
-
-                try
-                {
-                    byte b = GetNextOctet();
-                    if (0x02 != b)
-                    {
-                        var sb = new StringBuilder("Expected Integer. ");
-                        sb.AppendFormat("Specified Identifier: {0}", b.ToString(CultureInfo.InvariantCulture));
-                        throw new BerDecodeException(sb.ToString(), position);
-                    }
-
-                    int length = GetLength();
-                    if (length > RemainingBytes())
-                    {
-                        var sb = new StringBuilder("Incorrect Integer Size. ");
-                        sb.AppendFormat("Specified: {0}, Remaining: {1}",
-                                        length.ToString(CultureInfo.InvariantCulture),
-                                        RemainingBytes().ToString(CultureInfo.InvariantCulture));
-                        throw new BerDecodeException(sb.ToString(), position);
-                    }
-
-                    return GetOctets(length);
-                }
-
-                catch (ArgumentOutOfRangeException ex)
-                {
-                    throw new BerDecodeException("Error Parsing Key", position, ex);
-                }
-            }
-
-            public byte[] NextOID()
-            {
-                int position = CurrentPosition();
-
-                try
-                {
-                    byte b = GetNextOctet();
-                    if (0x06 != b)
-                    {
-                        var sb = new StringBuilder("Expected Object Identifier. ");
-                        sb.AppendFormat("Specified Identifier: {0}",
-                                        b.ToString(CultureInfo.InvariantCulture));
-                        throw new BerDecodeException(sb.ToString(), position);
-                    }
-
-                    int length = GetLength();
-                    if (length > RemainingBytes())
-                    {
-                        var sb = new StringBuilder("Incorrect Object Identifier Size. ");
-                        sb.AppendFormat("Specified: {0}, Remaining: {1}",
-                                        length.ToString(CultureInfo.InvariantCulture),
-                                        RemainingBytes().ToString(CultureInfo.InvariantCulture));
-                        throw new BerDecodeException(sb.ToString(), position);
-                    }
-
-                    var values = new byte[length];
-
-                    for (int i = 0; i < length; i++)
-                    {
-                        values[i] = _octets[0];
-                        _octets.RemoveAt(0);
-                    }
-
-                    return values;
-                }
-
-                catch (ArgumentOutOfRangeException ex)
-                {
-                    throw new BerDecodeException("Error Parsing Key", position, ex);
-                }
+                throw new BerDecodeException("Error Parsing Key", position, ex);
             }
         }
- 
+    }
+
 }

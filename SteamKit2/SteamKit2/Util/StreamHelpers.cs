@@ -7,19 +7,6 @@ namespace SteamKit2
     internal static class StreamHelpers
     {
         static byte[] data = new byte[8];
-        public static Int16 ReadInt16(this Stream stream)
-        {
-            stream.Read( data, 0, 2 );
-
-            return BitConverter.ToInt16( data, 0 );
-        }
-
-        public static UInt16 ReadUInt16(this Stream stream)
-        {
-            stream.Read(data, 0, 2);
-
-            return BitConverter.ToUInt16(data, 0);
-        }
 
         public static Int32 ReadInt32(this Stream stream)
         {
@@ -33,13 +20,6 @@ namespace SteamKit2
             stream.Read( data, 0, 8 );
 
             return BitConverter.ToInt64( data, 0 );
-        }
-
-        public static UInt32 ReadUInt32(this Stream stream)
-        {
-            stream.Read(data, 0, 4);
-
-            return BitConverter.ToUInt32(data, 0);
         }
 
         public static UInt64 ReadUInt64(this Stream stream)
@@ -88,19 +68,6 @@ namespace SteamKit2
             data[ dataLength ] = 0x00; // '\0'
 
             stream.Write( data, 0, data.Length );
-        }
-
-        static byte[] discardBuffer = new byte[2 << 12];
-
-        public static void ReadAndDiscard(this Stream stream, int len)
-        {
-            while (len > discardBuffer.Length)
-            {
-                stream.Read(discardBuffer, 0, discardBuffer.Length);
-                len -= discardBuffer.Length;
-            }
-
-            stream.Read(discardBuffer, 0, len);
         }
     }
 }

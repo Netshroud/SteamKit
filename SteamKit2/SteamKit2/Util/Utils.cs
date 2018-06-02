@@ -6,6 +6,7 @@
 
 
 using System;
+using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
@@ -17,11 +18,16 @@ namespace SteamKit2
 {
     static class Utils
     {
-        public static string EncodeHexString(byte[] input)
+        public static string EncodeHexString(ReadOnlySpan<byte> input)
         {
-            return input.Aggregate(new StringBuilder(),
-                       (sb, v) => sb.Append(v.ToString("x2"))
-                      ).ToString();
+            var sb = new StringBuilder(input.Length * 2);
+
+            foreach (var b in input)
+            {
+                sb.AppendFormat(CultureInfo.InvariantCulture, "{0:X2}", b);
+            }
+
+            return sb.ToString();
         }
 
         public static byte[] DecodeHexString(string hex)
@@ -308,7 +314,7 @@ namespace SteamKit2
         }
 
 
-        public static string UrlEncode( byte[] input )
+        public static string UrlEncode( ReadOnlySpan<byte> input )
         {
             StringBuilder encoded = new StringBuilder( input.Length * 2 );
 
